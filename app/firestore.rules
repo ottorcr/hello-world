@@ -1,0 +1,24 @@
+rules_version = '2';
+
+// Friends (and their widgets) can read without an account.
+// Only the author can post or delete.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAuthor() {
+      // Replace with your UID: Firebase console → Authentication → Users.
+      return request.auth != null && request.auth.uid == 'REPLACE_WITH_YOUR_UID';
+    }
+
+    match /thoughts/{thoughtId} {
+      allow read: if true;
+      allow create: if isAuthor()
+        && request.resource.data.keys().hasOnly(['text', 'createdAt'])
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 280
+        && request.resource.data.createdAt == request.time;
+      allow delete: if isAuthor();
+      allow update: if false;
+    }
+  }
+}

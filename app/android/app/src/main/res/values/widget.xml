@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_header">💭 Random Thoughts</string>
+    <string name="widget_empty">No thoughts yet. Open the app once to load them.</string>
+    <string name="widget_shuffle">Shuffle ↻</string>
+    <string name="widget_description">A random thought from your friend, right on your home screen.</string>
+
+    <color name="widget_bg">#FFEDE7FF</color>
+    <color name="widget_text">#FF1D1B20</color>
+    <color name="widget_secondary">#FF625B71</color>
+    <color name="widget_accent">#FF6A3FE0</color>
+</resources>
