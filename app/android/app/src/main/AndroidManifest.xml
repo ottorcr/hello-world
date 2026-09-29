@@ -3,7 +3,8 @@
     <application
         android:label="Random Thoughts"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:allowBackup="false">
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -35,6 +36,15 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/thoughts_widget_info" />
+        </receiver>
+        <!-- Lets the widget ask the app for fresh data in the background.
+             Not exported: only this app's own widget can trigger it. -->
+        <receiver
+            android:name="es.antonborri.home_widget.HomeWidgetBackgroundReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="es.antonborri.home_widget.action.BACKGROUND" />
+            </intent-filter>
         </receiver>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

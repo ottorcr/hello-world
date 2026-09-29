@@ -1,24 +1,194 @@
 rules_version = '2';
 
-// Friends (and their widgets) can read without an account.
-// Only the author can post or delete.
+// Random Thoughts security model
+// ------------------------------
+// * Everyone signs in with a verified email. Nothing is public.
+// * You become friends only when the other person approves your request.
+// * Posting writes one copy into each friend's private inbox. You can only
+//   write into the inbox of someone who has you in their friend list.
+// * You can only read your own inbox, plus the copies of your own posts.
+// * A photo is stored once (images/{postId}). You can read it only if the
+//   same author put that post in your inbox.
+// * Blocked users can't send you friend requests.
 service cloud.firestore {
   match /databases/{database}/documents {
-    function isAuthor() {
-      // Replace with your UID: Firebase console → Authentication → Users.
-      return request.auth != null && request.auth.uid == 'REPLACE_WITH_YOUR_UID';
+
+    function signedIn() {
+      return request.auth != null;
     }
 
-    match /thoughts/{thoughtId} {
-      allow read: if true;
-      allow create: if isAuthor()
-        && request.resource.data.keys().hasOnly(['text', 'createdAt'])
-        && request.resource.data.text is string
-        && request.resource.data.text.size() > 0
-        && request.resource.data.text.size() <= 280
+    function verified() {
+      return signedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isUser(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function isFriendOf(owner, other) {
+      return exists(/databases/$(database)/documents/users/$(owner)/friends/$(other));
+    }
+
+    function validName(name) {
+      return name is string && name.size() > 0 && name.size() <= 40;
+    }
+
+    // Every write must list exactly these keys and no others.
+    function hasExactly(keys) {
+      return request.resource.data.keys().hasOnly(keys)
+        && request.resource.data.keys().hasAll(keys);
+    }
+
+    // ---------------------------------------------------------------- profile
+    match /users/{uid} {
+      allow get: if isUser(uid);
+      allow create, update: if isUser(uid) && verified()
+        && hasExactly(['displayName', 'friendCode', 'createdAt'])
+        && validName(request.resource.data.displayName)
+        && request.resource.data.friendCode is string
+        // The friend code must point back at this user.
+        && getAfter(/databases/$(database)/documents/friendCodes/$(request.resource.data.friendCode)).data.uid == uid
+        && (resource == null
+            ? request.resource.data.createdAt == request.time
+            : request.resource.data.createdAt == resource.data.createdAt
+              && request.resource.data.friendCode == resource.data.friendCode);
+      allow delete: if isUser(uid);
+
+      // ---------------------------------------------------- friend requests
+      // users/{uid}/requests/{fromUid}: "fromUid wants to be uid's friend".
+      match /requests/{fromUid} {
+        allow read: if isUser(uid) || isUser(fromUid);
+        allow create: if isUser(fromUid) && verified()
+          && fromUid != uid
+          && !exists(/databases/$(database)/documents/users/$(uid)/blocked/$(fromUid))
+          && !isFriendOf(uid, fromUid)
+          && hasExactly(['displayName', 'createdAt'])
+          && validName(request.resource.data.displayName)
+          && request.resource.data.createdAt == request.time;
+        // Recipient declines/accepts, or sender cancels.
+        allow delete: if isUser(uid) || isUser(fromUid);
+      }
+
+      // users/{uid}/outgoing/{toUid}: requests uid has sent, so they can be
+      // withdrawn (for example when uid deletes their account).
+      match /outgoing/{toUid} {
+        allow read, delete: if isUser(uid);
+        allow create: if isUser(uid) && verified()
+          && hasExactly(['createdAt'])
+          && request.resource.data.createdAt == request.time;
+      }
+
+      // -------------------------------------------------------- friendships
+      // users/{uid}/friends/{friendUid}. Both sides are written together by
+      // the person accepting a pending request.
+      match /friends/{friendUid} {
+        allow read: if isUser(uid);
+        allow create: if verified()
+          && uid != friendUid
+          && hasExactly(['displayName', 'since'])
+          && validName(request.resource.data.displayName)
+          && request.resource.data.since == request.time
+          && (
+            // I accept friendUid's request to me.
+            (isUser(uid) && exists(/databases/$(database)/documents/users/$(uid)/requests/$(friendUid)))
+            // I accept uid's request to me, and write my side into their list.
+            || (isUser(friendUid) && exists(/databases/$(database)/documents/users/$(friendUid)/requests/$(uid)))
+          );
+        // Either person can end the friendship (both sides).
+        allow delete: if isUser(uid) || isUser(friendUid);
+      }
+
+      // ------------------------------------------------------------ blocked
+      match /blocked/{otherUid} {
+        allow read, delete: if isUser(uid);
+        allow create: if isUser(uid) && otherUid != uid
+          && hasExactly(['createdAt'])
+          && request.resource.data.createdAt == request.time;
+      }
+
+      // -------------------------------------------------------------- inbox
+      // users/{uid}/inbox/{postId}: a post a friend sent to uid.
+      match /inbox/{postId} {
+        allow read: if isUser(uid) || (signedIn() && resource.data.authorId == request.auth.uid);
+        allow create: if verified()
+          && request.resource.data.authorId == request.auth.uid
+          && request.auth.uid != uid
+          && isFriendOf(uid, request.auth.uid)
+          && hasExactly(['authorId', 'authorName', 'text', 'hasImage', 'createdAt'])
+          && validName(request.resource.data.authorName)
+          && request.resource.data.text is string
+          && request.resource.data.text.size() <= 280
+          && request.resource.data.hasImage is bool
+          && (request.resource.data.text.size() > 0 || request.resource.data.hasImage)
+          && request.resource.data.createdAt == request.time;
+        // The recipient can remove it; the author can unsend it.
+        allow delete: if isUser(uid) || (signedIn() && resource.data.authorId == request.auth.uid);
+      }
+
+      // --------------------------------------------------------------- sent
+      // users/{uid}/sent/{postId}: the author's own record, used to unsend
+      // and to delete everything when the account is deleted.
+      match /sent/{postId} {
+        allow read, delete: if isUser(uid);
+        allow create: if isUser(uid) && verified()
+          && hasExactly(['text', 'hasImage', 'recipients', 'createdAt'])
+          && request.resource.data.text is string
+          && request.resource.data.text.size() <= 280
+          && request.resource.data.hasImage is bool
+          && request.resource.data.recipients is list
+          && request.resource.data.recipients.size() <= 200
+          && request.resource.data.createdAt == request.time;
+      }
+    }
+
+    // ------------------------------------------------------------ friend codes
+    // friendCodes/{code} -> { uid, displayName }. Look up one code at a time.
+    // Listing all codes is not allowed.
+    match /friendCodes/{code} {
+      allow get: if verified();
+      allow create: if verified()
+        && code.matches('^[A-Z2-9]{8}$')
+        && hasExactly(['uid', 'displayName'])
+        && request.resource.data.uid == request.auth.uid
+        && validName(request.resource.data.displayName);
+      allow update: if verified()
+        && resource.data.uid == request.auth.uid
+        && hasExactly(['uid', 'displayName'])
+        && request.resource.data.uid == request.auth.uid
+        && validName(request.resource.data.displayName);
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    // ------------------------------------------------------------------ images
+    // images/{postId} -> { authorId, data (bytes), createdAt }
+    match /images/{postId} {
+      allow get: if signedIn() && (
+        resource.data.authorId == request.auth.uid
+        || get(/databases/$(database)/documents/users/$(request.auth.uid)/inbox/$(postId)).data.authorId
+             == resource.data.authorId
+      );
+      allow create: if verified()
+        && hasExactly(['authorId', 'data', 'createdAt'])
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.data is bytes
+        && request.resource.data.data.size() <= 900 * 1024
         && request.resource.data.createdAt == request.time;
-      allow delete: if isAuthor();
-      allow update: if false;
+      allow delete: if signedIn() && resource.data.authorId == request.auth.uid;
+    }
+
+    // ----------------------------------------------------------------- reports
+    // Write-only. Review them in the Firebase console.
+    match /reports/{reportId} {
+      allow create: if verified()
+        && hasExactly(['reporterId', 'reportedUid', 'postId', 'text', 'reason', 'createdAt'])
+        && request.resource.data.reporterId == request.auth.uid
+        && request.resource.data.reportedUid is string
+        && request.resource.data.postId is string
+        && request.resource.data.text is string
+        && request.resource.data.text.size() <= 280
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() <= 500
+        && request.resource.data.createdAt == request.time;
     }
   }
 }

@@ -6,21 +6,25 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
+import android.view.View
 import android.widget.RemoteViews
+import es.antonborri.home_widget.HomeWidgetBackgroundIntent
 import es.antonborri.home_widget.HomeWidgetLaunchIntent
 import es.antonborri.home_widget.HomeWidgetPlugin
 import es.antonborri.home_widget.HomeWidgetProvider
-import java.net.HttpURLConnection
-import java.net.URL
+import java.io.File
 import org.json.JSONArray
-import org.json.JSONObject
 
 /**
- * Home-screen widget that shows one random thought.
+ * Home-screen widget that shows one random thought from a friend.
  *
- * On every update it redraws from the cache the Flutter app saved, then pulls
- * fresh thoughts from the Firestore REST API in the background. Tapping
- * "Shuffle" picks another one; tapping the thought opens the app.
+ * It never touches the network. It only reads the feed the app saved on
+ * this device (see lib/widget_sync.dart). If that copy is older than
+ * [STALE_AFTER_MS], it asks the app to refresh it in the background with
+ * the user's own sign-in.
  */
 class ThoughtsWidgetProvider : HomeWidgetProvider() {
 
@@ -32,19 +36,15 @@ class ThoughtsWidgetProvider : HomeWidgetProvider() {
   ) {
     render(context, appWidgetManager, appWidgetIds, widgetData)
 
-    val projectId = widgetData.getString(KEY_PROJECT_ID, null) ?: return
-    val pending = goAsync()
-    Thread {
+    val syncedAt = (widgetData.all[KEY_SYNCED_AT] as? Number)?.toLong() ?: 0L
+    if (System.currentTimeMillis() - syncedAt > STALE_AFTER_MS) {
       try {
-        val fresh = fetchThoughts(projectId)
-        if (fresh != null) {
-          widgetData.edit().putString(KEY_THOUGHTS, JSONArray(fresh).toString()).apply()
-          render(context, appWidgetManager, appWidgetIds, widgetData)
-        }
-      } finally {
-        pending.finish()
+        HomeWidgetBackgroundIntent.getBroadcast(context, Uri.parse("randomthoughts://refresh"))
+            .send()
+      } catch (e: PendingIntent.CanceledException) {
+        // Nothing to do; the next update will try again.
       }
-    }.start()
+    }
   }
 
   override fun onReceive(context: Context, intent: Intent) {
@@ -63,8 +63,7 @@ class ThoughtsWidgetProvider : HomeWidgetProvider() {
       ids: IntArray,
       data: SharedPreferences,
   ) {
-    val thoughts = readCache(data)
-    val shuffleIntent =
+    val shuffle =
         PendingIntent.getBroadcast(
             context,
             0,
@@ -72,64 +71,64 @@ class ThoughtsWidgetProvider : HomeWidgetProvider() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
     val openApp = HomeWidgetLaunchIntent.getActivity(context, MainActivity::class.java)
+    val feed = readFeed(data)
 
     for (id in ids) {
+      val item = feed.randomOrNull()
+      val photo = item?.imagePath?.let { loadBitmap(it) }
+      val layout = if (photo != null) R.layout.thoughts_widget_photo else R.layout.thoughts_widget
       val views =
-          RemoteViews(context.packageName, R.layout.thoughts_widget).apply {
+          RemoteViews(context.packageName, layout).apply {
             setTextViewText(
-                R.id.thought_text,
-                thoughts.randomOrNull() ?: context.getString(R.string.widget_empty),
+                R.id.header,
+                if (item == null) context.getString(R.string.widget_header)
+                else context.getString(R.string.widget_from, item.author),
             )
-            setOnClickPendingIntent(R.id.thought_text, openApp)
-            setOnClickPendingIntent(R.id.shuffle_button, shuffleIntent)
+            val text = item?.text ?: context.getString(R.string.widget_empty)
+            setTextViewText(R.id.thought_text, text)
+            setViewVisibility(R.id.thought_text, if (text.isEmpty()) View.GONE else View.VISIBLE)
+            if (photo != null) setImageViewBitmap(R.id.photo, photo)
+            setOnClickPendingIntent(R.id.content, openApp)
+            setOnClickPendingIntent(R.id.shuffle_button, shuffle)
           }
       manager.updateAppWidget(id, views)
     }
   }
 
-  private fun readCache(data: SharedPreferences): List<String> {
-    val raw = data.getString(KEY_THOUGHTS, null) ?: return emptyList()
+  private data class Item(val author: String, val text: String, val imagePath: String?)
+
+  private fun readFeed(data: SharedPreferences): List<Item> {
+    val raw = data.getString(KEY_FEED, null) ?: return emptyList()
     return try {
       val array = JSONArray(raw)
-      List(array.length()) { array.getString(it) }.filter { it.isNotBlank() }
+      List(array.length()) { i ->
+        val o = array.getJSONObject(i)
+        Item(o.optString("a"), o.optString("t"), o.optString("i").ifEmpty { null })
+      }
     } catch (e: Exception) {
       emptyList()
     }
   }
 
-  /** Returns the latest thoughts, or null if the request failed. */
-  private fun fetchThoughts(projectId: String): List<String>? {
-    val url =
-        URL(
-            "https://firestore.googleapis.com/v1/projects/$projectId/databases/(default)" +
-                "/documents/thoughts?pageSize=200&orderBy=createdAt%20desc")
-    val conn = url.openConnection() as HttpURLConnection
-    return try {
-      conn.connectTimeout = 4000
-      conn.readTimeout = 4000
-      if (conn.responseCode != 200) return null
-      val body = conn.inputStream.bufferedReader().use { it.readText() }
-      val docs = JSONObject(body).optJSONArray("documents") ?: return emptyList()
-      List(docs.length()) { i ->
-            docs
-                .getJSONObject(i)
-                .optJSONObject("fields")
-                ?.optJSONObject("text")
-                ?.optString("stringValue")
-                .orEmpty()
-          }
-          .filter { it.isNotBlank() }
-    } catch (e: Exception) {
-      null
-    } finally {
-      conn.disconnect()
+  /** Decodes a downscaled copy, so it stays under the widget's bitmap memory limit. */
+  private fun loadBitmap(path: String): Bitmap? {
+    if (!File(path).exists()) return null
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(path, bounds)
+    var sample = 1
+    while (bounds.outWidth / (sample * 2) >= MAX_BITMAP_SIDE ||
+        bounds.outHeight / (sample * 2) >= MAX_BITMAP_SIDE) {
+      sample *= 2
     }
+    return BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample })
   }
 
   companion object {
     private const val ACTION_SHUFFLE = "com.ottorcr.random_thoughts.SHUFFLE"
+    private const val STALE_AFTER_MS = 25 * 60 * 1000L
+    private const val MAX_BITMAP_SIDE = 640
     // Keys shared with lib/widget_sync.dart.
-    private const val KEY_THOUGHTS = "thoughts_json"
-    private const val KEY_PROJECT_ID = "firebase_project_id"
+    private const val KEY_FEED = "feed_json"
+    private const val KEY_SYNCED_AT = "synced_at"
   }
 }
