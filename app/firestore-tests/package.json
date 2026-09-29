@@ -1,0 +1,13 @@
+{
+  "name": "random-thoughts-firestore-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "firebase --config ../firebase.json emulators:exec --only firestore --project demo-random-thoughts \"node --test --test-concurrency=1 rules.test.js\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.1",
+    "firebase": "^11.10.0",
+    "firebase-tools": "^15.0.0"
+  }
+}
