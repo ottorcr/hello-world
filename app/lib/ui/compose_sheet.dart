@@ -6,9 +6,12 @@ import 'package:image_picker/image_picker.dart';
 import '../config.dart';
 import '../data/image_prep.dart';
 import '../data/repository.dart';
+import '../data/spotify.dart';
 import 'common.dart';
+import 'song_widgets.dart';
 
-/// Write a thought, optionally with one photo, and send it to all friends.
+/// Write a thought, optionally with a photo and/or a Spotify song, and send
+/// it to all friends.
 class ComposeSheet extends StatefulWidget {
   const ComposeSheet({
     super.key,
@@ -26,6 +29,7 @@ class ComposeSheet extends StatefulWidget {
 class _ComposeSheetState extends State<ComposeSheet> {
   final _text = TextEditingController();
   Uint8List? _photo;
+  Song? _song;
   bool _busy = false;
 
   @override
@@ -53,10 +57,19 @@ class _ComposeSheetState extends State<ComposeSheet> {
     }
   }
 
+  Future<void> _addSong() async {
+    final song = await pickSong(context);
+    if (song != null && mounted) setState(() => _song = song);
+  }
+
   Future<void> _send() async {
     setState(() => _busy = true);
     try {
-      final count = await widget.repo.send(text: _text.text, jpeg: _photo);
+      final count = await widget.repo.send(
+        text: _text.text,
+        jpeg: _photo,
+        song: _song,
+      );
       if (!mounted) return;
       Navigator.pop(context);
       toast(context, 'Sent to $count ${count == 1 ? 'friend' : 'friends'} ✨');
@@ -70,7 +83,9 @@ class _ComposeSheetState extends State<ComposeSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final canSend = !_busy && (_text.text.trim().isNotEmpty || _photo != null);
+    final canSend =
+        !_busy &&
+        (_text.text.trim().isNotEmpty || _photo != null || _song != null);
     return Padding(
       padding: EdgeInsets.fromLTRB(
         16,
@@ -108,6 +123,13 @@ class _ComposeSheetState extends State<ComposeSheet> {
               ],
             ),
           if (_photo != null) const SizedBox(height: 12),
+          if (_song != null) ...[
+            SongTile(
+              song: _song!,
+              onRemove: () => setState(() => _song = null),
+            ),
+            const SizedBox(height: 12),
+          ],
           TextField(
             controller: _text,
             autofocus: _photo == null,
@@ -117,7 +139,7 @@ class _ComposeSheetState extends State<ComposeSheet> {
             textCapitalization: TextCapitalization.sentences,
             onChanged: (_) => setState(() {}),
             decoration: InputDecoration(
-              hintText: _photo == null
+              hintText: _photo == null && _song == null
                   ? 'What’s on your mind?'
                   : 'Add a caption (optional)',
               border: const OutlineInputBorder(),
@@ -134,6 +156,11 @@ class _ComposeSheetState extends State<ComposeSheet> {
                 tooltip: 'Take a photo',
                 onPressed: _busy ? null : () => _pick(ImageSource.camera),
                 icon: const Icon(Icons.photo_camera_outlined),
+              ),
+              IconButton(
+                tooltip: 'Add a Spotify song',
+                onPressed: _busy ? null : _addSong,
+                icon: const Icon(Icons.music_note_outlined),
               ),
               const Spacer(),
               if (_busy)

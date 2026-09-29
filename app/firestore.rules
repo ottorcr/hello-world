@@ -39,6 +39,30 @@ service cloud.firestore {
         && request.resource.data.keys().hasAll(keys);
     }
 
+    // Like hasExactly, but `optional` keys may also be present.
+    function hasRequired(keys, optional) {
+      return request.resource.data.keys().hasOnly(keys.concat(optional))
+        && request.resource.data.keys().hasAll(keys);
+    }
+
+    // An optional Spotify song: { id, title, art? }. Cover art has to come
+    // from Spotify's image CDN, so nobody can plant a tracking image.
+    function validSong(data) {
+      return !('song' in data) || (
+        data.song is map
+        && data.song.keys().hasOnly(['id', 'title', 'art'])
+        && data.song.keys().hasAll(['id', 'title'])
+        && data.song.id is string
+        && data.song.id.matches('^[A-Za-z0-9]{22}$')
+        && data.song.title is string
+        && data.song.title.size() > 0
+        && data.song.title.size() <= 200
+        && (!('art' in data.song) || (
+          data.song.art is string
+          && data.song.art.matches('^https://(i[.]scdn[.]co|image-cdn-[a-z]{2}[.]spotifycdn[.]com)/image/[A-Za-z0-9]{1,64}$')))
+      );
+    }
+
     // ---------------------------------------------------------------- profile
     match /users/{uid} {
       allow get: if isUser(uid);
@@ -122,12 +146,15 @@ service cloud.firestore {
           && request.resource.data.authorId == request.auth.uid
           && request.auth.uid != uid
           && isFriendOf(uid, request.auth.uid)
-          && hasExactly(['authorId', 'authorName', 'text', 'hasImage', 'createdAt'])
+          && hasRequired(['authorId', 'authorName', 'text', 'hasImage', 'createdAt'], ['song'])
           && validName(request.resource.data.authorName)
           && request.resource.data.text is string
           && request.resource.data.text.size() <= 280
           && request.resource.data.hasImage is bool
-          && (request.resource.data.text.size() > 0 || request.resource.data.hasImage)
+          && validSong(request.resource.data)
+          && (request.resource.data.text.size() > 0
+              || request.resource.data.hasImage
+              || 'song' in request.resource.data)
           && request.resource.data.createdAt == request.time;
         // The recipient can remove it; the author can unsend it.
         allow delete: if isUser(uid) || (signedIn() && resource.data.authorId == request.auth.uid);
@@ -139,10 +166,11 @@ service cloud.firestore {
       match /sent/{postId} {
         allow read, delete: if isUser(uid);
         allow create: if isUser(uid) && verified()
-          && hasExactly(['text', 'hasImage', 'recipients', 'createdAt'])
+          && hasRequired(['text', 'hasImage', 'recipients', 'createdAt'], ['song'])
           && request.resource.data.text is string
           && request.resource.data.text.size() <= 280
           && request.resource.data.hasImage is bool
+          && validSong(request.resource.data)
           && request.resource.data.recipients is list
           && request.resource.data.recipients.size() <= 200
           && request.resource.data.createdAt == request.time;

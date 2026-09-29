@@ -15,6 +15,7 @@ with friends you approve. It has no ads, no tracking, and no payments.
 | Display name and friend code | So friends can find and recognize you |
 | Your friend list, friend requests, and blocks | To deliver thoughts only to approved friends |
 | Thoughts and photos you share | To show them to your friends |
+| Spotify songs you attach (track ID, title, cover-art link) | To show and play the song for your friends |
 | Reports you file | To review abusive content |
 
 Photos are resized on your phone, and their metadata (including GPS
@@ -22,6 +23,17 @@ location) is removed **before** upload.
 
 We do **not** collect your contacts, location, device advertising ID, or
 analytics, and we don't sell or share your data.
+
+## Spotify
+
+You don't need a Spotify account, and the app never signs in to Spotify.
+When **you** attach a song, your phone asks Spotify's public
+`open.spotify.com/oembed` service for the title and cover art. When a
+**friend** views it, their phone loads the cover art from Spotify's image
+servers, and tapping it opens Spotify. Spotify's own
+[privacy policy](https://www.spotify.com/legal/privacy-policy/) applies to
+those requests. Only Spotify track links and Spotify-hosted cover art are
+accepted, so a song can't be used to track who viewed it.
 
 ## Who can see it
 

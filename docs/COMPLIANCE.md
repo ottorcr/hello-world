@@ -16,6 +16,7 @@
 | Social logins (Google, Facebook…) | **None** (keeps Apple guideline 4.8 simple) |
 | Minimum age | **18+** (`AppConfig.minimumAge`) |
 | Photos | Resized, and all EXIF metadata (including GPS location) removed on the device before upload |
+| Spotify | Paste a song link. No Spotify login, SDK or API key. Only the track ID, title and Spotify-CDN cover art are stored (enforced by the rules) |
 
 ## Checklist
 

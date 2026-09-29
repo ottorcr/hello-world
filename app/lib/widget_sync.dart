@@ -16,7 +16,8 @@ import 'firebase_options.dart';
 /// The widgets never talk to the network. They only read what this class
 /// writes to on-device storage (App Group on iOS, SharedPreferences on
 /// Android):
-///  * [feedKey]: JSON list of `{a: author, t: text, i: imagePath?}`
+///  * [feedKey]: JSON list of
+///    `{a: author, t: text, i: imagePath?, s: songTitle?, u: songUrl?}`
 ///  * [syncedAtKey]: when the feed was last refreshed (ms since epoch)
 class WidgetSync {
   static const appGroupId = 'group.com.ottorcr.randomThoughts';
@@ -48,8 +49,15 @@ class WidgetSync {
           imageKeys.add(key);
         }
       }
-      if (post.text.isEmpty && path == null) continue;
-      items.add({'a': post.authorName, 't': post.text, 'i': ?path});
+      final song = post.song;
+      if (post.text.isEmpty && path == null && song == null) continue;
+      items.add({
+        'a': post.authorName,
+        't': post.text,
+        'i': ?path,
+        's': ?song?.title,
+        'u': ?song?.url.toString(),
+      });
     }
     await HomeWidget.saveWidgetData<String>(feedKey, jsonEncode(items));
     await HomeWidget.saveWidgetData<int>(

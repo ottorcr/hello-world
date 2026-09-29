@@ -3,5 +3,6 @@
     <color name="widget_bg">#FF2B2440</color>
     <color name="widget_text">#FFF4EFFF</color>
     <color name="widget_secondary">#FFCBC2DB</color>
+    <color name="widget_spotify">#FF1ED760</color>
     <color name="widget_accent">#FFCBB8FF</color>
 </resources>

@@ -371,3 +371,81 @@ describe('account deletion', () => {
     await assertFails(deleteDoc(doc(db('mallory'), 'users/carol')));
   });
 });
+
+describe('spotify songs', () => {
+  const song = (extra = {}) => ({
+    id: '4cOdK2wGLETKBW3PvgPWqT',
+    title: 'Never Gonna Give You Up',
+    art: 'https://i.scdn.co/image/ab67616d0000b27315ebbedaacef61af244262a8',
+    ...extra,
+  });
+
+  test('a friend can send a thought with a song', async () => {
+    await befriend('alice', 'bob');
+    await assertSucceeds(setDoc(doc(db('alice'), 'users/bob/inbox/p1'), post('alice', { song: song() })));
+  });
+
+  test('a song on its own (no text) is fine', async () => {
+    await befriend('alice', 'bob');
+    await assertSucceeds(
+      setDoc(doc(db('alice'), 'users/bob/inbox/p1'), post('alice', { text: '', song: song() })),
+    );
+  });
+
+  test('art is optional, and the newer Spotify CDN host is accepted', async () => {
+    await befriend('alice', 'bob');
+    const { art, ...noArt } = song();
+    await assertSucceeds(setDoc(doc(db('alice'), 'users/bob/inbox/p1'), post('alice', { song: noArt })));
+    await assertSucceeds(
+      setDoc(
+        doc(db('alice'), 'users/bob/inbox/p2'),
+        post('alice', { song: song({ art: 'https://image-cdn-ak.spotifycdn.com/image/ab67616d00001e02abc' }) }),
+      ),
+    );
+  });
+
+  test('cover art from anywhere else is rejected (no tracking pixels)', async () => {
+    await befriend('alice', 'bob');
+    for (const art of [
+      'https://evil.example/pixel.png',
+      'http://i.scdn.co/image/abc',
+      'https://i.scdn.co.evil.example/image/abc',
+      'https://i.scdn.co/image/abc?track=me',
+    ]) {
+      await assertFails(
+        setDoc(doc(db('alice'), 'users/bob/inbox/p1'), post('alice', { song: song({ art }) })),
+      );
+    }
+  });
+
+  test('malformed songs are rejected', async () => {
+    await befriend('alice', 'bob');
+    for (const bad of [
+      song({ id: 'short' }),
+      song({ id: '../../../etc/passwd123456' }),
+      song({ title: '' }),
+      song({ title: 'x'.repeat(201) }),
+      song({ uri: 'javascript:alert(1)' }),
+      'https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT',
+    ]) {
+      await assertFails(setDoc(doc(db('alice'), 'users/bob/inbox/p1'), post('alice', { song: bad })));
+    }
+  });
+
+  test('the sent record may carry the song too', async () => {
+    await assertSucceeds(
+      setDoc(doc(db('alice'), 'users/alice/sent/p1'), {
+        text: '',
+        hasImage: false,
+        song: song(),
+        recipients: ['bob'],
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  test('an empty post with no text, photo or song is still rejected', async () => {
+    await befriend('alice', 'bob');
+    await assertFails(setDoc(doc(db('alice'), 'users/bob/inbox/p1'), post('alice', { text: '' })));
+  });
+});
