@@ -88,6 +88,14 @@ class ThoughtsWidgetProvider : HomeWidgetProvider() {
             setTextViewText(R.id.thought_text, text)
             setViewVisibility(R.id.thought_text, if (text.isEmpty()) View.GONE else View.VISIBLE)
             if (photo != null) setImageViewBitmap(R.id.photo, photo)
+            val song = item?.song
+            if (song != null) {
+              setTextViewText(R.id.song, context.getString(R.string.widget_song, song.title))
+              setViewVisibility(R.id.song, View.VISIBLE)
+              setOnClickPendingIntent(R.id.song, openSong(context, song.url))
+            } else {
+              setViewVisibility(R.id.song, View.GONE)
+            }
             setOnClickPendingIntent(R.id.content, openApp)
             setOnClickPendingIntent(R.id.shuffle_button, shuffle)
           }
@@ -95,7 +103,23 @@ class ThoughtsWidgetProvider : HomeWidgetProvider() {
     }
   }
 
-  private data class Item(val author: String, val text: String, val imagePath: String?)
+  private data class Song(val title: String, val url: String)
+
+  private data class Item(
+      val author: String,
+      val text: String,
+      val imagePath: String?,
+      val song: Song?,
+  )
+
+  /** Opens the song in Spotify (or the browser). Only Spotify track links are allowed. */
+  private fun openSong(context: Context, url: String): PendingIntent =
+      PendingIntent.getActivity(
+          context,
+          url.hashCode(),
+          Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+          PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+      )
 
   private fun readFeed(data: SharedPreferences): List<Item> {
     val raw = data.getString(KEY_FEED, null) ?: return emptyList()
@@ -103,7 +127,10 @@ class ThoughtsWidgetProvider : HomeWidgetProvider() {
       val array = JSONArray(raw)
       List(array.length()) { i ->
         val o = array.getJSONObject(i)
-        Item(o.optString("a"), o.optString("t"), o.optString("i").ifEmpty { null })
+        val songUrl = o.optString("u")
+        val song =
+            if (SPOTIFY_TRACK.matches(songUrl)) Song(o.optString("s"), songUrl) else null
+        Item(o.optString("a"), o.optString("t"), o.optString("i").ifEmpty { null }, song)
       }
     } catch (e: Exception) {
       emptyList()
@@ -127,6 +154,7 @@ class ThoughtsWidgetProvider : HomeWidgetProvider() {
     private const val ACTION_SHUFFLE = "com.ottorcr.random_thoughts.SHUFFLE"
     private const val STALE_AFTER_MS = 25 * 60 * 1000L
     private const val MAX_BITMAP_SIDE = 640
+    private val SPOTIFY_TRACK = Regex("^https://open\\.spotify\\.com/track/[A-Za-z0-9]{22}$")
     // Keys shared with lib/widget_sync.dart.
     private const val KEY_FEED = "feed_json"
     private const val KEY_SYNCED_AT = "synced_at"

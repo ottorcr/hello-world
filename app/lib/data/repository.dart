@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../config.dart';
 import 'models.dart';
+import 'spotify.dart';
 
 /// Thrown for problems the user can fix, with a message to show them.
 class UserFacingException implements Exception {
@@ -223,12 +224,14 @@ class Repository {
       .snapshots()
       .map((s) => s.docs.map(SentPost.fromDoc).toList());
 
-  /// Sends a thought (and optional JPEG photo) to all current friends.
-  /// Returns how many friends received it.
-  Future<int> send({required String text, Uint8List? jpeg}) async {
+  /// Sends a thought (with an optional JPEG photo and/or Spotify song) to all
+  /// current friends. Returns how many friends received it.
+  Future<int> send({required String text, Uint8List? jpeg, Song? song}) async {
     final body = text.trim();
-    if (body.isEmpty && jpeg == null) {
-      throw const UserFacingException('Write something or add a photo.');
+    if (body.isEmpty && jpeg == null && song == null) {
+      throw const UserFacingException(
+        'Write something, or add a photo or song.',
+      );
     }
     // The rules count Unicode code points, so count runes rather than UTF-16.
     if (body.runes.length > AppConfig.maxTextLength) {
@@ -257,6 +260,7 @@ class Repository {
     batch.set(sentRef, {
       'text': body,
       'hasImage': jpeg != null,
+      if (song != null) 'song': song.toMap(),
       'recipients': friends,
       'createdAt': FieldValue.serverTimestamp(),
     });
@@ -266,6 +270,7 @@ class Repository {
         'authorName': me?.displayName ?? 'Friend',
         'text': body,
         'hasImage': jpeg != null,
+        if (song != null) 'song': song.toMap(),
         'createdAt': FieldValue.serverTimestamp(),
       });
     }

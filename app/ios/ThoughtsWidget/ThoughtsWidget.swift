@@ -18,11 +18,25 @@ struct FeedItem: Decodable {
   let author: String
   let text: String
   let imagePath: String?
+  let songTitle: String?
+  let songURL: String?
 
   enum CodingKeys: String, CodingKey {
     case author = "a"
     case text = "t"
     case imagePath = "i"
+    case songTitle = "s"
+    case songURL = "u"
+  }
+
+  /// Only real Spotify track links become tappable.
+  var song: (title: String, url: URL)? {
+    guard let songTitle, let songURL,
+          songURL.range(of: #"^https://open\.spotify\.com/track/[A-Za-z0-9]{22}$"#,
+                        options: .regularExpression) != nil,
+          let url = URL(string: songURL)
+    else { return nil }
+    return (songTitle, url)
   }
 }
 
@@ -57,6 +71,8 @@ struct ThoughtEntry: TimelineEntry {
   let author: String?
   let text: String
   let photo: UIImage?
+  var songTitle: String? = nil
+  var songURL: URL? = nil
 
   static func random(from items: [FeedItem], at date: Date) -> ThoughtEntry {
     guard let item = items.randomElement() else {
@@ -64,7 +80,8 @@ struct ThoughtEntry: TimelineEntry {
     }
     return ThoughtEntry(
       date: date, author: item.author, text: item.text,
-      photo: FeedStore.thumbnail(at: item.imagePath))
+      photo: FeedStore.thumbnail(at: item.imagePath),
+      songTitle: item.song?.title, songURL: item.song?.url)
   }
 }
 
@@ -113,7 +130,7 @@ struct ThoughtsWidgetView: View {
         if let author = entry.author {
           Text(author).font(.caption2).foregroundStyle(.secondary)
         }
-        Text(entry.text.isEmpty ? "📷 Photo" : entry.text)
+        Text(entry.text.isEmpty ? (entry.songTitle.map { "🎵 \($0)" } ?? "📷 Photo") : entry.text)
           .font(.headline)
           .minimumScaleFactor(0.6)
       }
@@ -131,13 +148,22 @@ struct ThoughtsWidgetView: View {
             Text(entry.text).font(.caption).fontWeight(.semibold).lineLimit(2)
           }
         } else {
-          Text(entry.text)
+          Text(entry.text.isEmpty ? "🎵 \(entry.songTitle ?? "")" : entry.text)
             .font(.system(family == .systemSmall ? .callout : .title3, design: .rounded))
             .fontWeight(.semibold)
             .minimumScaleFactor(0.5)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         }
         HStack {
+          if let title = entry.songTitle, let url = entry.songURL {
+            Link(destination: url) {
+              Label(title, systemImage: "music.note")
+                .font(.caption)
+                .fontWeight(.semibold)
+                .lineLimit(1)
+                .foregroundStyle(Color(red: 0.11, green: 0.73, blue: 0.33))
+            }
+          }
           Spacer()
           Button(intent: ShuffleThoughtIntent()) {
             Label("Shuffle", systemImage: "shuffle").font(.caption)

@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'spotify.dart';
+
 DateTime? _date(Object? v) => v is Timestamp ? v.toDate() : null;
 
 class Profile {
@@ -26,6 +28,7 @@ class Post {
     required this.authorName,
     required this.text,
     required this.hasImage,
+    this.song,
     this.createdAt,
   });
 
@@ -34,6 +37,7 @@ class Post {
   final String authorName;
   final String text;
   final bool hasImage;
+  final Song? song;
   final DateTime? createdAt;
 
   factory Post.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -44,6 +48,7 @@ class Post {
       authorName: d['authorName'] as String? ?? '',
       text: d['text'] as String? ?? '',
       hasImage: d['hasImage'] as bool? ?? false,
+      song: Song.fromMap(d['song']),
       createdAt: _date(d['createdAt']),
     );
   }
@@ -56,6 +61,7 @@ class SentPost {
     required this.text,
     required this.hasImage,
     required this.recipients,
+    this.song,
     this.createdAt,
   });
 
@@ -63,6 +69,7 @@ class SentPost {
   final String text;
   final bool hasImage;
   final List<String> recipients;
+  final Song? song;
   final DateTime? createdAt;
 
   factory SentPost.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -72,6 +79,7 @@ class SentPost {
       text: d['text'] as String? ?? '',
       hasImage: d['hasImage'] as bool? ?? false,
       recipients: List<String>.from(d['recipients'] as List? ?? const []),
+      song: Song.fromMap(d['song']),
       createdAt: _date(d['createdAt']),
     );
   }

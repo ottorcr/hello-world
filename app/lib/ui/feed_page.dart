@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../data/models.dart';
 import '../data/repository.dart';
 import 'common.dart';
+import 'song_widgets.dart';
 
 class FeedPage extends StatefulWidget {
   const FeedPage({
@@ -131,6 +132,11 @@ class PostCard extends StatelessWidget {
             trailing: _PostMenu(post: post, repo: repo),
           ),
           if (post.hasImage) PostImage(repo: repo, postId: post.id),
+          if (post.song != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+              child: SongTile(song: post.song!),
+            ),
           if (post.text.isNotEmpty)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),

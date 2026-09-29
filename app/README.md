@@ -6,8 +6,10 @@ widget.
 
 - **Only approved friends:** you add someone by their 8-character friend
   code, and they have to approve. Nothing is public.
-- **Text + photos:** photos are resized, and GPS/EXIF data is stripped on
-  the phone before upload.
+- **Text + photos + songs:** photos are resized, and GPS/EXIF data is
+  stripped on the phone before upload. Attach a **Spotify song** by
+  pasting its link. Friends tap it to play it in Spotify, from the app or
+  from the widget.
 - **Widgets:** home screen (both platforms) and lock screen (iOS). A random
   thought every ~30 minutes, plus a **Shuffle** button.
 - **Safety:** hide, report, block, unfriend, unsend, and full account
@@ -31,6 +33,7 @@ widget.
 | --- | --- |
 | `lib/data/repository.dart` | All Firestore access: profile, friend codes, requests, friends, posts, block/report, account deletion |
 | `lib/data/image_prep.dart` | Resizes photos and strips their metadata |
+| `lib/data/spotify.dart` | Parses Spotify links and looks up title/cover art (public oEmbed, no login) |
 | `lib/ui/` | Screens: sign in, verify email, setup, feed, compose, friends, me |
 | `lib/widget_sync.dart` | Writes the feed to on-device storage for the widgets. Background refresh on Android |
 | `firestore.rules` | **The security model.** Read the comments at the top |
@@ -113,6 +116,15 @@ cd firestore-tests && npm ci && npm test # security rules (needs Java 21)
 
 Instant pushes to widgets would need Cloud Functions + FCM, and that needs
 the Blaze plan. It's easy to add later if you want it.
+
+## Why songs are shared by link (not a Spotify login)
+
+Spotify's Web API needs either a client secret, which can't safely ship
+inside an app, or each user logging in with OAuth. It also limits apps that
+Spotify hasn't approved to a handful of test users. Pasting a link through
+the public oEmbed endpoint needs no keys or accounts and works for
+everyone. If you later want in-app search, add a tiny backend (for example a
+Cloud Function holding the client secret) that proxies Spotify's search.
 
 ## Legal
 

@@ -94,7 +94,11 @@ class MePage extends StatelessWidget {
                           )
                         : null,
                     title: Text(
-                      s.text.isEmpty ? '📷 Photo' : s.text,
+                      [
+                        if (s.text.isNotEmpty) s.text,
+                        if (s.song != null) '🎵 ${s.song!.title}',
+                        if (s.text.isEmpty && s.song == null) '📷 Photo',
+                      ].join('  '),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
