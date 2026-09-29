@@ -88,11 +88,19 @@ service cloud.firestore {
           && hasExactly(['displayName', 'since'])
           && validName(request.resource.data.displayName)
           && request.resource.data.since == request.time
+          // Nobody who is blocked (either way) can become a friend again.
+          && !exists(/databases/$(database)/documents/users/$(uid)/blocked/$(friendUid))
+          && !exists(/databases/$(database)/documents/users/$(friendUid)/blocked/$(uid))
           && (
-            // I accept friendUid's request to me.
-            (isUser(uid) && exists(/databases/$(database)/documents/users/$(uid)/requests/$(friendUid)))
+            // I accept friendUid's request to me...
+            (isUser(uid)
+              && exists(/databases/$(database)/documents/users/$(uid)/requests/$(friendUid))
+              // ...and use it up in the same batch, so it can't be replayed later.
+              && !existsAfter(/databases/$(database)/documents/users/$(uid)/requests/$(friendUid)))
             // I accept uid's request to me, and write my side into their list.
-            || (isUser(friendUid) && exists(/databases/$(database)/documents/users/$(friendUid)/requests/$(uid)))
+            || (isUser(friendUid)
+              && exists(/databases/$(database)/documents/users/$(friendUid)/requests/$(uid))
+              && !existsAfter(/databases/$(database)/documents/users/$(friendUid)/requests/$(uid)))
           );
         // Either person can end the friendship (both sides).
         allow delete: if isUser(uid) || isUser(friendUid);

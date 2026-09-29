@@ -172,6 +172,10 @@ class Repository {
     await _commitDeletes([
       _sub(uid, 'friends').doc(friendUid),
       _sub(friendUid, 'friends').doc(uid),
+      // Clear leftover requests in both directions.
+      _sub(uid, 'requests').doc(friendUid),
+      _sub(friendUid, 'requests').doc(uid),
+      _sub(uid, 'outgoing').doc(friendUid),
       for (final d in theirPostsToMe.docs) d.reference,
       for (final d in myPostsToThem.docs) d.reference,
     ]);
@@ -181,7 +185,6 @@ class Repository {
   Future<void> block(String otherUid) async {
     await unfriend(otherUid);
     final batch = _db.batch()
-      ..delete(_sub(uid, 'requests').doc(otherUid))
       ..set(_sub(uid, 'blocked').doc(otherUid), {
         'createdAt': FieldValue.serverTimestamp(),
       });

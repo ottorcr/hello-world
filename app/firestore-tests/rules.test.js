@@ -137,6 +137,30 @@ describe('friendships', () => {
     await assertFails(getDocs(collection(db('alice'), 'users/bob/friends')));
   });
 
+  test('a leftover request cannot be replayed to re-add a friend', async () => {
+    // Victim sends a request to the attacker.
+    await request('victim', 'attacker');
+    // Attacker accepts but keeps the request around.
+    const d = db('attacker');
+    const keep = writeBatch(d);
+    keep.set(doc(d, 'users/attacker/friends/victim'), { displayName: 'v', since: serverTimestamp() });
+    keep.set(doc(d, 'users/victim/friends/attacker'), { displayName: 'a', since: serverTimestamp() });
+    await assertFails(keep.commit());
+  });
+
+  test('a blocked user cannot become a friend again', async () => {
+    await befriend('victim', 'attacker');
+    // Victim blocks, but a stale request from the victim somehow remains.
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const f = ctx.firestore();
+      await deleteDoc(doc(f, 'users/victim/friends/attacker'));
+      await deleteDoc(doc(f, 'users/attacker/friends/victim'));
+      await setDoc(doc(f, 'users/victim/blocked/attacker'), { createdAt: new Date() });
+      await setDoc(doc(f, 'users/attacker/requests/victim'), { displayName: 'v', createdAt: new Date() });
+    });
+    await assertFails(acceptBatch('attacker', 'victim'));
+  });
+
   test('either side can unfriend', async () => {
     await befriend('alice', 'bob');
     await assertSucceeds(deleteDoc(doc(db('alice'), 'users/bob/friends/alice')));
